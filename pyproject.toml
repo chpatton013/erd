@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "erd"
+description = "replacement for tree cli tool"
+version = "0.1.0"
+requires-python = ">= 3.11"
+dependencies = [
+  "dircolors>=0.0.4",
+  "igittigitt>=2.1",
+]
+authors = [
+  {name = "Christopher Patton", email = "chpatton013@gmail.com"},
+]
+maintainers = [
+  {name = "Christopher Patton", email = "chpatton013@gmail.com"},
+]
+readme = "README.md"
+license = {file = "LICENSE.md"}
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: MacOS :: MacOS X",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+]
+
+[project.scripts]
+erd = "erd:main"
+
+[project.urls]
+Repository = "https://github.com/chpatton013/erd.git"
+"Bug Tracker" = "https://github.com/chpatton013/erd/issues"
