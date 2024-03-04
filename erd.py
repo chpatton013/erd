@@ -6,6 +6,7 @@ import os
 import shlex
 import stat
 import subprocess
+import sys
 from dataclasses import dataclass
 from typing import Iterator
 
@@ -101,7 +102,9 @@ def make_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("paths", default=["."], nargs="*")
     parser.add_argument("--include", "-P", default="")
     parser.add_argument("--exclude", "-I", default="")
-    parser.add_argument("--gitignore", action="store_true", default=False)
+    parser.add_argument("--gitignore", dest="gitignore", action="store_true")
+    parser.add_argument("--no-gitignore", dest="gitignore", action="store_false")
+    parser.set_defaults(gitignore=False)
     return parser
 
 
@@ -120,6 +123,8 @@ def combine_argv_and_rc(rc: str | None, argv: list[str] | None) -> list[str]:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    if not argv:
+        argv = sys.argv[1:]
     parser = make_argument_parser()
     rc_group = parser.add_mutually_exclusive_group()
     rc_group.add_argument("--rc", default=DEFAULT_RC_FILE)
@@ -200,4 +205,4 @@ def main(argv: list[str] | None = None):
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])
