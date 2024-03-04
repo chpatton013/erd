@@ -136,17 +136,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def make_ignore_parser() -> IgnoreParser:
+def make_ignore_parser(base_dir: str) -> IgnoreParser | None:
     try:
         p = subprocess.run(
             ["git", "rev-parser", "--show-toplevel"],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
+            cwd=base_dir,
         )
         top = p.stdout.decode().strip()
     except subprocess.CalledProcessError:
-        top = os.getcwd()
+        return None
     parser = IgnoreParser()
     parser.parse_rule_files(base_dir=top, add_default_patterns=True)
     return parser
@@ -195,11 +196,12 @@ def main(argv: list[str] | None = None):
 
     include = [PathMatch(expr) for expr in args.include.split("|") if expr.strip()]
     exclude = [PathMatch(expr) for expr in args.exclude.split("|") if expr.strip()]
-    gitignore = make_ignore_parser() if args.gitignore else None
-    filter = PathFilter(include=include, exclude=exclude, gitignore=gitignore)
 
     for path in args.paths:
         entity = Entity(path, preserve_path=True)
+        base_dir = path if os.path.isdir(path) else os.path.dirname(path)
+        gitignore = make_ignore_parser(base_dir) if args.gitignore else None
+        filter = PathFilter(include=include, exclude=exclude, gitignore=gitignore)
         for line in tree(entity, filter):
             print(line)
 
