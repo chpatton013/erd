@@ -2,21 +2,111 @@
 
 import argparse
 import fnmatch
+import glob
 import os
+import re
 import shlex
 import stat
-import subprocess
 import sys
 from dataclasses import dataclass
 from typing import Iterator
 
+import igittigitt.igittigitt
+import wcmatch
 from dircolors import Dircolors
-from igittigitt import IgnoreParser
 
 
 XDG_CONFIG_HOME = os.getenv("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
 DEFAULT_RC_FILE = os.path.join(XDG_CONFIG_HOME, "erd.rc")
 DIRCOLORS = Dircolors()
+
+
+class GitignoreParser:
+    ignore_rules: list[igittigitt.igittigitt.IgnoreRule] = []
+    negate_rules: list[igittigitt.igittigitt.IgnoreRule] = []
+    _patterns: tuple[re.Pattern, re.Pattern] | None = None
+
+    def _compile_patterns(self) -> tuple[re.Pattern, re.Pattern]:
+        self.ignore_rules = sorted(set(self.ignore_rules))
+        self.negate_rules = sorted(set(self.negate_rules))
+        ignore, negate = wcmatch.glob.translate(
+            [rule.pattern_glob for rule in self.ignore_rules],
+            flags=wcmatch.glob.DOTGLOB | wcmatch.glob.GLOBSTAR,
+            exclude=[rule.pattern_glob for rule in self.negate_rules],
+        )
+        ignore = "|".join(ignore)
+        negate = "|".join(negate)
+        self._patterns = (re.compile(ignore), re.compile(negate))
+        return self._patterns
+
+    def match(self, file_path: str) -> bool:
+        ignore, negate = self._patterns or self._compile_patterns()
+        if re.match(ignore, file_path):
+            return not bool(re.match(negate, file_path))
+        return False
+
+    def _add_rule(self, rule: igittigitt.igittigitt.IgnoreRule) -> None:
+        self._patterns = None
+        if rule.is_negation_rule:
+            self.negate_rules.append(rule)
+        else:
+            self.ignore_rules.append(rule)
+
+    def add_rule(self, pattern: str, base_dir: str) -> None:
+        rules = igittigitt.igittigitt.igittigitt.get_rules_from_git_pattern(
+            git_pattern=pattern,
+            path_base_dir=base_dir,
+        )
+        for rule in rules:
+            self._add_rule(rule)
+
+    def parse_rule_file(self, rule_file: str, base_dir: str | None = None) -> None:
+        base_dir = base_dir or os.path.dirname(rule_file)
+
+        with open(rule_file, "r") as f:
+            line_number = 0
+            for line in f:
+                line_number += 1
+                line = line.rstrip("\n")
+                rules = igittigitt.igittigitt.get_rules_from_git_pattern(
+                    git_pattern=line,
+                    path_base_dir=base_dir,
+                    path_source_file=rule_file,
+                    source_line_number=line_number,
+                )
+                for rule in rules:
+                    self._add_rule(rule)
+
+    def parse_rule_files(self, base_dir: str, add_default_patterns: bool = False) -> None:
+        if add_default_patterns:
+            config_home = os.getenv("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
+            default_rule_file = os.path.join(config_home, "git", "gitignore")
+            try:
+                self.parse_rule_file(default_rule_file, base_dir)
+            except FileNotFoundError:
+                pass
+
+        rule_files = sorted(glob.glob(f"{base_dir}/**/.gitignore", recursive=True))
+        for rule_file in rule_files:
+            if not self.match(rule_file) or True:
+                self.parse_rule_file(rule_file)
+
+
+def find_git_toplevel(base_dir: str) -> str | None:
+    if os.path.exists(os.path.join(base_dir, ".git")):
+        return base_dir
+    if base_dir == "/":
+        return None
+    return find_git_toplevel(os.path.dirname(base_dir))
+
+
+def make_ignore_parser(base_dir: str) -> GitignoreParser | None:
+    top = find_git_toplevel(base_dir)
+    if not top:
+        return None
+    parser = GitignoreParser()
+    parser.parse_rule_files(base_dir=top, add_default_patterns=True)
+    return parser
 
 
 class Entity:
@@ -84,7 +174,7 @@ class PathMatch:
 class PathFilter:
     include: list[PathMatch]
     exclude: list[PathMatch]
-    gitignore: IgnoreParser | None
+    gitignore: GitignoreParser | None
 
     def __call__(self, entity: Entity) -> bool:
         retain = True
@@ -136,23 +226,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def make_ignore_parser(base_dir: str) -> IgnoreParser | None:
-    try:
-        p = subprocess.run(
-            ["git", "rev-parser", "--show-toplevel"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            cwd=base_dir,
-        )
-        top = p.stdout.decode().strip()
-    except subprocess.CalledProcessError:
-        return None
-    parser = IgnoreParser()
-    parser.parse_rule_files(base_dir=top, add_default_patterns=True)
-    return parser
-
-
 def tree_walk(
     entity: Entity,
     ancestors: list[Entity],
@@ -198,6 +271,7 @@ def main(argv: list[str] | None = None):
     exclude = [PathMatch(expr) for expr in args.exclude.split("|") if expr.strip()]
 
     for path in args.paths:
+        path = os.path.expanduser(path)
         entity = Entity(path, preserve_path=True)
         base_dir = path if os.path.isdir(path) else os.path.dirname(path)
         gitignore = make_ignore_parser(base_dir) if args.gitignore else None
