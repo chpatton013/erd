@@ -17,7 +17,7 @@ from dircolors import Dircolors
 
 
 XDG_CONFIG_HOME = os.getenv("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-DEFAULT_RC_FILE = os.path.join(XDG_CONFIG_HOME, "erd.rc")
+DEFAULT_RC_FILE = os.getenv("ERD_RC", os.path.join(XDG_CONFIG_HOME, "erd.rc"))
 DIRCOLORS = Dircolors()
 
 
@@ -82,8 +82,7 @@ class GitignoreParser:
 
     def parse_rule_files(self, base_dir: str, add_default_patterns: bool = False) -> None:
         if add_default_patterns:
-            config_home = os.getenv("XDG_CONFIG_HOME", os.path.expanduser("~/.config"))
-            default_rule_file = os.path.join(config_home, "git", "gitignore")
+            default_rule_file = os.path.join(XDG_CONFIG_HOME, "git", "gitignore")
             try:
                 self.parse_rule_file(default_rule_file, base_dir)
             except FileNotFoundError:
